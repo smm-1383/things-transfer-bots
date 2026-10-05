@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""tsend [-b t|s|a] [-g] [-t contact] [-m text] [files...]   sudo tsend ... reads as root.
+-b: t=telegram (default), s=splus, a=both.  -g: send each as .tar.gz (files or folders).
+-m: send a text message (alone, or before the files), e.g.  long-job; tsend -m "done" """
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+BOTS = {"t": ("telegram", 30081), "s": ("splus", 30082)}
+
+ap = argparse.ArgumentParser(prog="tsend")
+ap.add_argument("-b", "--bot", choices=["t", "s", "a"], default="t", help="t=telegram, s=splus, a=both")
+ap.add_argument("-g", "--targz", action="store_true", help="send as .tar.gz")
+ap.add_argument("-t", "--to", help="contact name from the bot's contacts ConfigMap (default: you)")
+ap.add_argument("-m", "--message", help="text message to send")
+ap.add_argument("files", nargs="*")
+args = ap.parse_args()
+if not args.files and not args.message:
+    ap.error("give files and/or -m text")
+
+# under sudo, HOME may be /root: use the invoking user's config
+home = os.path.expanduser("~" + os.environ.get("SUDO_USER", ""))
+token = os.environ.get("API_TOKEN")
+if not token:
+    try:
+        with open(os.path.join(home, ".config/file-sender-bot/env")) as f:
+            for line in f:
+                k, _, v = line.strip().partition("=")
+                if k == "API_TOKEN":
+                    token = v.strip("'\"")
+    except OSError:
+        pass
+if not token:
+    sys.exit("API_TOKEN not set (env or ~/.config/file-sender-bot/env)")
+
+payload = json.dumps({"paths": [os.path.realpath(f) for f in args.files], "to": args.to,
+                      "sudo": os.geteuid() == 0, "glob": False, "targz": args.targz, "text": args.message}).encode()
+bad = 0
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never send API_TOKEN via http_proxy
+for key in ("t", "s") if args.bot == "a" else (args.bot,):
+    name, port = BOTS[key]
+    tag = f"[{name}] " if args.bot == "a" else ""
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/send", data=payload,
+                                 headers={"X-Token": token, "Content-Type": "application/json"})
+    try:
+        with opener.open(req, timeout=600) as r:
+            out = json.load(r)
+    except urllib.error.HTTPError as e:
+        print(f"{tag}FAIL  HTTP {e.code}: {e.read().decode()}", file=sys.stderr)
+        bad += 1
+        continue
+    except OSError as e:
+        print(f"{tag}FAIL  cannot reach bot ({e})", file=sys.stderr)
+        bad += 1
+        continue
+    for r in out["results"]:
+        ok = r["status"] == "ok"
+        bad += not ok
+        print(f"{tag}{'sent  ' if ok else 'FAIL  '}{r['path']}  {r['detail']}")
+sys.exit(1 if bad else 0)
