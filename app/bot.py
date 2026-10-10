@@ -338,7 +338,8 @@ def handle_message(msg):
     if sudo:
         # PIN = last line, or last word of a single-line message
         pin, body = (lines[-1].strip(), "\n".join(lines[:-1])) if len(lines) > 1 else ("", text)
-        api("deleteMessage", data={"chat_id": chat, "message_id": msg["message_id"]})
+        res = api("deleteMessage", data={"chat_id": chat, "message_id": msg["message_id"]})
+        log("sudo_delete", message_id=msg["message_id"], chat_id=chat, response=res)
     else:
         body = text
     try:
