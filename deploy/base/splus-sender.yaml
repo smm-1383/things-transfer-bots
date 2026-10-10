@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: splus-sender
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: splus-sender}
+  template:
+    metadata:
+      labels: {app: splus-sender}
+    spec:
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ["8.8.8.8", "1.1.1.1"]
+      containers:
+        - name: bot
+          image: file-sender-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: MODE, value: splus}
+            - {name: BOT_TOKEN, valueFrom: {secretKeyRef: {name: splus-sender-secret, key: BOT_TOKEN}}}
+            - {name: OWNER_CHAT_ID, valueFrom: {secretKeyRef: {name: splus-sender-secret, key: OWNER_CHAT_ID}}}
+            - {name: SUDO_PIN, valueFrom: {secretKeyRef: {name: splus-sender-secret, key: SUDO_PIN}}}
+            - {name: API_TOKEN, valueFrom: {secretKeyRef: {name: splus-sender-secret, key: API_TOKEN}}}
+            - {name: PROXY, valueFrom: {secretKeyRef: {name: splus-sender-secret, key: PROXY, optional: true}}}
+          envFrom:
+            - configMapRef: {name: sender-config, optional: true}
+          ports:
+            - {containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [DAC_OVERRIDE, DAC_READ_SEARCH, SETUID, SETGID]
+          volumeMounts:
+            - {name: host, mountPath: /host, readOnly: true}
+            - {name: contacts, mountPath: /etc/contacts}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: host
+          hostPath: {path: /host, type: Directory}
+        - name: contacts
+          configMap: {name: splus-sender-contacts}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: splus-sender
+spec:
+  selector: {app: splus-sender}
+  ports:
+    - {port: 8080, targetPort: 8080}
