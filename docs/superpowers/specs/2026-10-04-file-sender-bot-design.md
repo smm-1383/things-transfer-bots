@@ -39,20 +39,22 @@ tests/       plain-python tests, run with `make test` (no pytest)
   - `cd [dir]` (no arg = `~`), bare `..`, and the reply keyboard buttons `/` and `~` change it; an optional third button is configured by `MAIN_BUTTON_TEXT` + `MAIN_BUTTON_PATH` (both must be set). `/start` shows the cwd and the keyboard. cd checks access as the normal user, even for `sudo`.
   - `ls [path...]` lists names (with `.` and `..`); `ll` is long format (mode, size, mtime, symlink target). Optional `G [-v] regex` at the end filters lines like `| grep` (`-v` inverts). Output is chunked below 4000 chars. A listed directory carries an inline button "cd <dir>" (ids kept in memory; after a restart: "button expired, run ls again").
   - `targz path...` sends each file or directory as `<name>.tar.gz` (built in a temp file, aborted early when over the size limit, unreadable entries skipped and counted).
+  - `climits` replies with Claude usage (live OAuth API, else `~/.claude/rate-limits/*.json`).
   - Anything else = paths to send with `sendDocument`; at most 50 files per request.
 - Per-path outcomes: over limit ("too big (N MB > L MB limit)"), no match, permission denied (with "(try sudo)" when not sudo), directory ("use ls"), empty, not a regular file. Final summary: failures one per line, then "sent 3, skipped 1".
 - Echo before files: before sending, the bot posts the request text (`sudo ` prefix if sudo, tokens re-quoted, `[in <cwd>]` appended if any path was relative), so each batch of files can be matched to its request.
+- Command words (`ls ll cd targz climits sudo /start`) match case-insensitively; paths and the `G` filter keyword stay case-sensitive. `_` is an alias for `sudo`.
 - `sudo <request>` plus PIN (last line, or last word of a single-line message): runs as root. The bot calls `deleteMessage` on the sudo message first, then proceeds. Wrong PIN: denied reply + WARN; 3 failures => sudo locked 10 min. PIN is never logged. `sudo ls`, `sudo targz` and `sudo <paths>` work.
 - Chat always replies to owner; contacts only via HTTP/CLI.
 
 ## HTTP `POST /send`
-- Header `X-Token: API_TOKEN`. Body `{"paths": [abs...], "to": "amin"|null, "sudo": bool, "glob": bool, "targz": bool, "text": str|null}`; at least one of paths/text. tsend sends literal paths (glob=false); targz sends each as `.tar.gz`.
+- Header `X-Token: API_TOKEN`. Body `{"paths": [abs...], "to": "amin"|null, "sudo": bool, "glob": bool, "targz": bool, "text": str|null, "verbose": bool}`; at least one of paths/text. tsend sends literal paths (glob=false); targz sends each as `.tar.gz`.
 - `to` resolved via contacts; unknown => 400 with the list of known names. Null => owner.
-- `text` is sent first, then the files. For the owner, an echo message `[sudo ]tsend [-g] <paths>` precedes the files. Per-file results are returned; for a contact destination, or when anything failed, a summary is also messaged to the owner.
+- `text` is sent first, then the files. Per-file results are returned (tsend prints failures). Only with `verbose` (`tsend -v`): for the owner an echo `[sudo ]tsend [-g] <paths>` precedes the files, and a summary (`cli → who`, failures, counts) is messaged to the owner.
 - `GET /healthz` for the liveness probe. The port is reachable on 127.0.0.1 via the NodePorts; anyone holding API_TOKEN can request `sudo: true`.
 
 ## tsend
-- `tsend [-b t|s|a] [-g] [-t contact] [-m text] [files...]`. `-b`: t = telegram (port 30081, default), s = splus (30082), a = both. `-g`: send as `.tar.gz`. `-m`: text message, alone or before the files. `-t`: contact name.
+- `tsend [-b t|s|a] [-g] [-t contact] [-m text] [files...]`. `-b`: t = telegram (port 30081), s = splus (30082, default), a = both. `-g`: send as `.tar.gz`. `-v`: verbose (echo + summary in chat, off by default). `-m`: text message, alone or before the files. `-t`: contact name.
 - Files are passed as realpaths. `sudo tsend ...` (euid 0) sets `sudo: true`; no PIN needed (local root + API_TOKEN).
 - Token from `API_TOKEN` env or `~/.config/file-sender-bot/env` (of `SUDO_USER` under sudo). Requests ignore `http_proxy` env vars. Exit code 1 if anything failed.
 

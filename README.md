@@ -16,8 +16,9 @@ Chat (only the owner chat is served; quote paths with spaces):
 - `cd [dir]`, `..`, `ls`/`ll [dir...] [G [-v] pattern]` (pattern filters lines like grep; each listed dir gets a "cd" button), `targz path...` sends `.tar.gz`.
 - Keyboard buttons: `/`, `~` and an optional third (`MAIN_BUTTON_TEXT` + `MAIN_BUTTON_PATH` in `.env`). The cwd is in memory and resets to home on restart.
 - The bot echoes the request before the files so you can match them up.
+- Command words are case-insensitive (`LS`, `Sudo`); paths are not. `_` works as short for `sudo`.
 - `sudo <request>` reads as root, PIN on the last line (or last word); the message is deleted. 3 bad PINs lock sudo for 10 minutes.
 
-CLI: `tsend [-b t|s|a] [-g] [-t contact] [-m text] [files...]` (`-b` bot: telegram/splus/both, `-g` as .tar.gz, `-t` contact, `-m` text message).
+CLI: `tsend [-b t|s|a] [-g] [-t contact] [-m text] [-v] [files...]` (`-b` bot: telegram/splus/both, `-g` as .tar.gz, `-t` contact, `-m` text message, `-v` also post the echo and result summary in chat).
 `.env` and `contacts/*.env` hold secrets and chat ids and are git-ignored.
 Design: `docs/superpowers/specs/`.
