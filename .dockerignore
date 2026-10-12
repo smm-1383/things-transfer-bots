@@ -1,0 +1,7 @@
+.env
+.env.*
+contacts
+tests
+docs
+.git
+__pycache__
