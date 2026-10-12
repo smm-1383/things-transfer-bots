@@ -1,3 +1,4 @@
+import calendar
 import ctypes
 import glob
 import hmac
@@ -320,6 +321,44 @@ def sudo_allowed(pin):
     return "bad_pin"
 
 
+def climits():
+    """Claude usage like the host `climits` function: live OAuth API, else the statusline session files."""
+    data = {}
+    with fs_as(False):
+        try:
+            with open(f"{ROOT}{HOME}/.claude/.credentials.json") as f:
+                tok = json.load(f)["claudeAiOauth"]["accessToken"]
+            r = session.get("https://api.anthropic.com/api/oauth/usage", timeout=10, headers={
+                "Authorization": f"Bearer {tok}", "anthropic-beta": "oauth-2025-04-20"})
+            r.raise_for_status()
+            for k, v in r.json().items():
+                if k in ("five_hour", "seven_day") and v:
+                    reset = time.strptime(re.sub(r"\.\d+|\+00:00$", "", v["resets_at"]), "%Y-%m-%dT%H:%M:%S")
+                    data[k] = (v["utilization"], calendar.timegm(reset))
+        except Exception as e:  # no creds, no network, bad json: fall back to files
+            log("climits_live_failed", "WARN", error=repr(e))
+        if not data:
+            for fn in glob.glob(f"{ROOT}{HOME}/.claude/rate-limits/*.json"):
+                try:
+                    for k, v in json.load(open(fn)).items():
+                        if k in ("five_hour", "seven_day") and v.get("used_percentage") is not None \
+                                and v["resets_at"] > time.time() and v["used_percentage"] >= data.get(k, (-1,))[0]:
+                            data[k] = (v["used_percentage"], v["resets_at"])
+                except (OSError, ValueError, AttributeError, KeyError):
+                    pass
+    out = []
+    for k, label in (("five_hour", "Usage"), ("seven_day", "Weekly")):
+        if k in data:
+            pct, reset = int(data[k][0]), max(0, int(data[k][1] - time.time()))
+            n = (pct + 5) // 10
+            dur = f"{reset // 86400}d {reset % 86400 // 3600}h" if reset >= 86400 else f"{reset // 3600}h {reset % 3600 // 60}m"
+            out.append(f"{label} {'█' * n}{'░' * (10 - n)} {pct}% (resets in {dur})")
+    return " | ".join(out) or "no live usage data (open a claude session)"
+
+
+COMMANDS = ("ls", "ll", "cd", "targz", "climits", "/start")
+
+
 def handle_message(msg):
     chat = str(msg["chat"]["id"])
     text = (msg.get("text") or "").strip()
@@ -333,7 +372,7 @@ def handle_message(msg):
         set_cwd(chat, QUICK.get(text, text))
         return
     lines = text.splitlines()
-    sudo = lines[0].split()[0] == "sudo"
+    sudo = lines[0].split()[0].lower() in ("sudo", "_")
     log("request", sudo=sudo, text_len=len(text), lines=len(lines))
     if sudo:
         # PIN = last line, or last word of a single-line message
@@ -359,7 +398,11 @@ def handle_message(msg):
         if not tokens:
             say(chat, "usage: sudo <paths|ls path|targz path>  (PIN on last line or last word)")
             return
-    if tokens[0] in ("ls", "ll"):
+    if tokens[0].lower() in COMMANDS:  # command words are case-insensitive; paths are not
+        tokens[0] = tokens[0].lower()
+    if tokens == ["climits"]:
+        say(chat, climits())
+    elif tokens[0] in ("ls", "ll"):
         args, flt = tokens[1:], None
         if "G" in args:  # `ls dir G pattern` = | grep pattern ; `G -v pattern` inverts
             i = args.index("G")
@@ -444,10 +487,11 @@ class Handler(BaseHTTPRequestHandler):
             ok = say(chat, str(text))
             log("cli_message", to=to or "owner", chars=len(str(text)), ok=ok)
             results.append({"path": "(message)", "status": "ok" if ok else "api_error", "detail": "message sent" if ok else "send failed"})
-        if paths and chat == OWNER:
+        verbose = bool(body.get("verbose"))  # echo + summary only on tsend -v; the CLI prints failures itself
+        if verbose and paths and chat == OWNER:
             say(chat, ("sudo " if sudo else "") + "tsend" + (" -g" if body.get("targz") else "") + " " + fmt(paths))
         results += handle_paths(paths, chat, sudo, "cli", use_glob=bool(body.get("glob")), archive=bool(body.get("targz")))
-        if chat != OWNER or any(r["status"] != "ok" for r in results):
+        if verbose:
             say(OWNER, f"cli → {to or 'you'}\n" + summary(results))
         self.reply(200, {"results": results})
 

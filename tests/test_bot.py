@@ -67,3 +67,24 @@ def test_unicode_pin_and_glob_runs_as_user(tmp_path):
     finally:
         bot.fs_as = orig
     assert calls == [False, True]  # glob drops privileges like reads do
+
+def test_climits_file_fallback(tmp_path):
+    bot.ROOT = str(tmp_path); (tmp_path / "home/u/.claude/rate-limits").mkdir(parents=True)  # no credentials: live call fails
+    assert "no live usage data" in bot.climits()
+    far = int(bot.time.time()) + 3 * 3600 + 60
+    (tmp_path / "home/u/.claude/rate-limits/a.json").write_text('{"five_hour": {"used_percentage": 42.5, "resets_at": %d}}' % far)
+    assert bot.climits() == "Usage ████░░░░░░ 42% (resets in 3h 0m)"
+
+def test_case_insensitive_commands_and_underscore_sudo(tmp_path):
+    bot.ROOT = str(tmp_path); bot.OWNER = "1"; bot._pin_fails[:] = []
+    (tmp_path / "home/u/Code").mkdir(parents=True)
+    sent = []
+    orig = bot.api
+    bot.api = lambda *a, **k: (sent.append(k.get("data", {}).get("text", "")), {"ok": True, "result": True})[1]
+    try:
+        for t in ("LS Code", "lS Code", "Sudo ls Code p", "_ ls Code p", "CLIMITS"):
+            sent.clear()
+            bot.handle_message({"chat": {"id": 1}, "message_id": 5, "text": t})
+            assert sent and "unknown" not in sent[-1] and "denied" not in sent[-1] and "no such" not in sent[-1], (t, sent)
+    finally:
+        bot.api = orig
