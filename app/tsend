@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""tsend [-b t|s|a] [-g] [-t contact] [-m text] [-v] [files...]   sudo tsend ... reads as root.
+"""tsend [-b t|s|a] [-g] [-t contact] [-m [text]] [-f name [-p]] [-v] [files...]
+sudo tsend ... reads as root.
 -b: t=telegram, s=splus (default), a=both.  -g: send each as .tar.gz (files or folders).
 -v: also post the request echo and result summary in the chat.
--m: send a text message (alone, or before the files), e.g.  long-job; tsend -m "done" """
+-m: send a text message (alone, or before the files), e.g.  long-job; tsend -m "done"
+    bare -m takes the message from a pipe:  pf | tsend -m -t amin
+-f NAME: save piped stdin as NAME (in the current folder; a random suffix is added before the
+    extension if NAME exists), send it, delete it. -p/--persist keeps it:  pf | tsend -f logs.csv -t amin"""
 import argparse
+import atexit
 import json
 import os
+import secrets
 import sys
 import urllib.error
 import urllib.request
@@ -16,12 +22,56 @@ ap = argparse.ArgumentParser(prog="tsend")
 ap.add_argument("-b", "--bot", choices=["t", "s", "a"], default="s", help="t=telegram, s=splus, a=both")
 ap.add_argument("-g", "--targz", action="store_true", help="send as .tar.gz")
 ap.add_argument("-t", "--to", help="contact name from the bot's contacts ConfigMap (default: you)")
-ap.add_argument("-m", "--message", help="text message to send")
+ap.add_argument("-m", "--message", nargs="?", const=True, help="text message to send (bare -m: read it from stdin)")
+ap.add_argument("-f", "--file-name", help="save stdin under this name, send it, then delete it")
+ap.add_argument("-p", "--persist", action="store_true", help="with -f: keep the file after sending")
 ap.add_argument("-v", "--verbose", action="store_true", help="also post the request echo and result summary in the chat")
 ap.add_argument("files", nargs="*")
 args = ap.parse_args()
-if not args.files and not args.message:
-    ap.error("give files and/or -m text")
+if args.persist and not args.file_name:
+    ap.error("-p needs -f")
+if args.message is True and args.file_name:
+    ap.error("stdin can fill -m or -f, not both: give -m some text")
+if not args.files and not args.message and not args.file_name:
+    ap.error("give files and/or -m text, or pipe into -f name")
+
+
+def read_stdin():
+    if sys.stdin.isatty():
+        sys.exit("nothing piped in (use: cmd | tsend ...)")
+    data = sys.stdin.buffer.read()
+    if not data:
+        sys.exit("nothing piped in (stdin is empty)")
+    return data
+
+
+def make_piped_file(name, data):
+    """Create `name` (basename only) in the cwd, else /tmp; if taken, add a random suffix before the extension."""
+    base, ext = os.path.splitext(os.path.basename(name) or "piped")
+    for folder in (os.getcwd(), "/tmp"):
+        for i in range(20):
+            path = os.path.join(folder, base + ("" if i == 0 else "-" + secrets.token_hex(3)) + ext)
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                continue
+            except OSError:
+                break  # folder not writable: try the next one
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            return path
+    sys.exit(f"cannot create {name} (no writable folder)")
+
+
+if args.message is True:
+    args.message = read_stdin().decode("utf-8", "replace").rstrip("\n") or sys.exit("nothing piped in (message is empty)")
+if args.file_name:
+    piped = make_piped_file(args.file_name, read_stdin())
+    if args.persist:
+        print(f"kept {piped}", file=sys.stderr)
+    else:
+        atexit.register(lambda: os.path.exists(piped) and os.unlink(piped))
+    args.files.append(piped)
 
 # under sudo, HOME may be /root: use the invoking user's config
 home = os.path.expanduser("~" + os.environ.get("SUDO_USER", ""))

@@ -55,6 +55,7 @@ tests/       plain-python tests, run with `make test` (no pytest)
 
 ## tsend
 - `tsend [-b t|s|a] [-g] [-t contact] [-m text] [files...]`. `-b`: t = telegram (port 30081), s = splus (30082, default), a = both. `-g`: send as `.tar.gz`. `-v`: verbose (echo + summary in chat, off by default). `-m`: text message, alone or before the files. `-t`: contact name.
+- Pipes: bare `-m` reads the message from stdin. `-f NAME` saves stdin as `NAME` (basename, mode 600) in the cwd (fallback `/tmp`; a taken name gets a random suffix before the extension, created with O_EXCL), sends it, and deletes it on exit unless `-p`. Empty or missing stdin => clean error, exit 1.
 - Files are passed as realpaths. `sudo tsend ...` (euid 0) sets `sudo: true`; no PIN needed (local root + API_TOKEN).
 - Token from `API_TOKEN` env or `~/.config/file-sender-bot/env` (of `SUDO_USER` under sudo). Requests ignore `http_proxy` env vars. Exit code 1 if anything failed.
 
