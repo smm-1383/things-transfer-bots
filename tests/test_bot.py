@@ -88,3 +88,14 @@ def test_case_insensitive_commands_and_underscore_sudo(tmp_path):
             assert sent and "unknown" not in sent[-1] and "denied" not in sent[-1] and "no such" not in sent[-1], (t, sent)
     finally:
         bot.api = orig
+
+def test_caption_goes_on_first_file_only(tmp_path):
+    bot.ROOT = str(tmp_path); (tmp_path / "a.txt").write_text("1"); (tmp_path / "b.txt").write_text("2")
+    calls = []
+    orig = bot.api
+    bot.api = lambda method, **k: (calls.append((method, k.get("data", {}).get("caption"))), {"ok": True})[1]
+    try:
+        bot.handle_paths(["/nope", "/a.txt", "/b.txt"], "1", False, "cli", use_glob=False, caption="read it")
+    finally:
+        bot.api = orig
+    assert calls == [("sendDocument", "read it"), ("sendDocument", None)]  # missing file doesn't eat it

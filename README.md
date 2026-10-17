@@ -19,6 +19,6 @@ Chat (only the owner chat is served; quote paths with spaces):
 - Command words are case-insensitive (`LS`, `Sudo`); paths are not. `_` works as short for `sudo`.
 - `sudo <request>` reads as root, PIN on the last line (or last word); the message is deleted. 3 bad PINs lock sudo for 10 minutes.
 
-CLI: `tsend [-b t|s|a] [-g] [-t contact] [-m [text]] [-f name [-p]] [-v] [files...]` (`-b` bot: telegram/splus/both, `-g` as .tar.gz, `-t` contact, `-m` text message, `-v` also post the echo and result summary in chat). Pipes: `pf | tsend -m -t amin` sends the piped text as the message; `pf | tsend -f logs.csv -t amin` saves stdin as `logs.csv` in the current folder (random suffix before the extension if the name exists), sends it, then deletes it (`-p` keeps it).
+CLI: `tsend [-b t|s|a] [-g] [-t contact] [-m [text]] [-f name [-p]] [-v] [files...]` (`-b` bot: telegram/splus/both, `-g` as .tar.gz, `-t` contact, `-m` text message, `-v` also post the echo and result summary in chat). Pipes: `pf | tsend -m -t amin` sends the piped text as the message; `pf | tsend -f logs.csv -t amin` saves stdin as `logs.csv` in the current folder (random suffix before the extension if the name exists), sends it, then deletes it (`-p` keeps it). With files, the `-m` text becomes the caption of the first file (texts over 1024 characters are sent as a separate message first).
 `.env` and `contacts/*.env` hold secrets and chat ids and are git-ignored.
 Design: `docs/superpowers/specs/`.

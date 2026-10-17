@@ -214,8 +214,8 @@ def fmt(tokens):
     return " ".join(t.replace(" ", "\\ ") for t in tokens)
 
 
-def handle_paths(tokens, chat, sudo, source, use_glob=True, archive=False, base=None):
-    """Send every file; returns per-file results."""
+def handle_paths(tokens, chat, sudo, source, use_glob=True, archive=False, base=None, caption=None):
+    """Send every file; returns per-file results. `caption` goes on the first file that is sent."""
     results = []
     for tok in tokens:
         hits = expand(tok, use_glob, base, sudo)
@@ -233,9 +233,10 @@ def handle_paths(tokens, chat, sudo, source, use_glob=True, archive=False, base=
             name = os.path.basename(p.rstrip("/")) + (".tar.gz" if archive else "")
             if status == "ok":
                 t0 = time.time()
-                body = api("sendDocument", timeout=300, data={"chat_id": chat},
+                body = api("sendDocument", timeout=300, data={"chat_id": chat, **({"caption": caption} if caption else {})},
                            files={"document": (name, data)})
                 if body.get("ok"):
+                    caption = None
                     log("sent", path=p, bytes=detail, to=chat, sudo=sudo, ms=int((time.time() - t0) * 1000))
                     results.append({"path": p, "status": "ok", "detail": f"{detail} bytes"})
                 else:
@@ -483,14 +484,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {"error": f"unknown contact {to!r}", "known": known})
         log("http_send", to=to or "owner", sudo=sudo, paths=len(paths), client=self.client_address[0])
         results = []
-        if text:
+        caption = str(text) if text and paths and len(str(text)) <= 1024 else None  # one file message instead of two
+        if text and not caption:
             ok = say(chat, str(text))
             log("cli_message", to=to or "owner", chars=len(str(text)), ok=ok)
             results.append({"path": "(message)", "status": "ok" if ok else "api_error", "detail": "message sent" if ok else "send failed"})
         verbose = bool(body.get("verbose"))  # echo + summary only on tsend -v; the CLI prints failures itself
         if verbose and paths and chat == OWNER:
             say(chat, ("sudo " if sudo else "") + "tsend" + (" -g" if body.get("targz") else "") + " " + fmt(paths))
-        results += handle_paths(paths, chat, sudo, "cli", use_glob=bool(body.get("glob")), archive=bool(body.get("targz")))
+        results += handle_paths(paths, chat, sudo, "cli", use_glob=bool(body.get("glob")), archive=bool(body.get("targz")), caption=caption)
+        if caption and not any(r["status"] == "ok" for r in results):  # nothing carried it: don't lose the text
+            say(chat, caption)
         if verbose:
             say(OWNER, f"cli → {to or 'you'}\n" + summary(results))
         self.reply(200, {"results": results})

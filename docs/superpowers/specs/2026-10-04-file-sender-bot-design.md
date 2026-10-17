@@ -50,7 +50,7 @@ tests/       plain-python tests, run with `make test` (no pytest)
 ## HTTP `POST /send`
 - Header `X-Token: API_TOKEN`. Body `{"paths": [abs...], "to": "amin"|null, "sudo": bool, "glob": bool, "targz": bool, "text": str|null, "verbose": bool}`; at least one of paths/text. tsend sends literal paths (glob=false); targz sends each as `.tar.gz`.
 - `to` resolved via contacts; unknown => 400 with the list of known names. Null => owner.
-- `text` is sent first, then the files. Per-file results are returned (tsend prints failures). Only with `verbose` (`tsend -v`): for the owner an echo `[sudo ]tsend [-g] <paths>` precedes the files, and a summary (`cli → who`, failures, counts) is messaged to the owner.
+- With paths, `text` (up to 1024 chars) is the caption of the first file actually sent (if no file goes out it is sent as a plain message); longer text, or no paths, is sent first as its own message. Per-file results are returned (tsend prints failures). Only with `verbose` (`tsend -v`): for the owner an echo `[sudo ]tsend [-g] <paths>` precedes the files, and a summary (`cli → who`, failures, counts) is messaged to the owner.
 - `GET /healthz` for the liveness probe. The port is reachable on 127.0.0.1 via the NodePorts; anyone holding API_TOKEN can request `sudo: true`.
 
 ## tsend
